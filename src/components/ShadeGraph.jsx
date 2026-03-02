@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import '../glow.css';
 
 const WIDTH = 500;
 const HEIGHT = 500;
@@ -137,6 +138,7 @@ const ShadeGraph = () => {
 	const [hoverPreview, setHoverPreview] = useState(null); // { x, y } in value space, or null
 	const [shadingHistory, setShadingHistory] = useState([null]); // undo/redo stack for shading choices
 	const [shadingIndex, setShadingIndex] = useState(0);
+	const [showHistoryGlow, setShowHistoryGlow] = useState(true);
 	const containerRef = useRef(null);
 	const pendingLineRef = useRef(null); // segment to commit when animation hits 1
 	const historyIndexRef = useRef(0);
@@ -275,7 +277,7 @@ const ShadeGraph = () => {
 		...points,
 	];
 
-	const canUndo = historyIndex > 0 || shadingIndex > 0;
+	const canUndo = historyIndex > 0 || shadingIndex > 0 || points.length > 0;
 	const canRedo =
 		(historyIndex === 0 && history.length > 0) ||
 		(historyIndex >= 1 && shadingIndex < shadingHistory.length - 1);
@@ -362,78 +364,83 @@ const ShadeGraph = () => {
 				border: '1px solid #ccc',
 				borderRadius: 4,
 				overflow: 'hidden',
-				backgroundColor: '#fafafa',
+				backgroundColor: '#fff',
 				cursor: historyIndex >= 1 ? 'pointer' : 'crosshair',
 				userSelect: 'none',
 				WebkitUserSelect: 'none',
+				MozUserSelect: 'none',
+				msUserSelect: 'none',
 			}}
 		>
 			{/* Undo, Redo, Reset */}
 			<div
-				style={{
-					position: 'absolute',
-					top: 11,
-					right: 12,
-					display: 'flex',
-					gap: 6,
-					alignItems: 'center',
-					zIndex: 1,
-				}}
+				className={`segmented-glow-button simple-glow compact${!showHistoryGlow ? ' hide-orbit' : ''}`}
+				style={{ position: 'absolute', top: 11, right: 12, zIndex: 1 }}
 			>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						if (!canUndo) return;
-						if (historyIndex >= 1 && shadingIndex > 0) {
-							setShadingIndex((i) => i - 1);
-						} else if (historyIndex > 0) {
-							setHistoryIndex((i) => i - 1);
+				<div className="segment-container">
+					<button
+						type="button"
+						className={`segment ${!canUndo ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (!canUndo) return;
+							setShowHistoryGlow(false);
+							// If we're still placing the first line's points, undo the last point
+							if (historyIndex === 0 && points.length > 0) {
+								setPoints((prev) => prev.slice(0, -1));
+								setHoverPreview(null);
+							} else if (historyIndex >= 1 && shadingIndex > 0) {
+								setShadingIndex((i) => i - 1);
+							} else if (historyIndex > 0) {
+								// Remove the completed line but keep its first point as the new starting point
+								const seg = history[historyIndex - 1];
+								if (seg && seg.p1) {
+									setPoints([seg.p1]);
+								}
+								setHistoryIndex((i) => i - 1);
+								setShadingIndex(0);
+							}
+						}}
+						disabled={!canUndo}
+					>
+						Undo
+					</button>
+					<button
+						type="button"
+						className={`segment ${!canRedo ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (!canRedo) return;
+							setShowHistoryGlow(false);
+							if (historyIndex === 0 && history.length > 0) {
+								setHistoryIndex((i) => i + 1);
+							} else if (historyIndex >= 1 && shadingIndex < shadingHistory.length - 1) {
+								setShadingIndex((i) => i + 1);
+							}
+						}}
+						disabled={!canRedo}
+					>
+						Redo
+					</button>
+					<button
+						type="button"
+						className={`segment ${!canReset ? 'inactive' : ''}`}
+						onClick={(e) => {
+							e.stopPropagation();
+							if (!canReset) return;
+							setShowHistoryGlow(false);
+							setHistory([]);
+							setHistoryIndex(0);
+							setPoints([]);
+							setLineProgress(0);
+							setShadingHistory([null]);
 							setShadingIndex(0);
-						}
-					}}
-					disabled={!canUndo}
-					style={buttonStyle(canUndo)}
-				>
-					Undo
-				</button>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						if (!canRedo) return;
-						if (historyIndex === 0 && history.length > 0) {
-							setHistoryIndex((i) => i + 1);
-						} else if (historyIndex >= 1 && shadingIndex < shadingHistory.length - 1) {
-							setShadingIndex((i) => i + 1);
-						}
-					}}
-					disabled={!canRedo}
-					style={buttonStyle(canRedo)}
-				>
-					Redo
-				</button>
-				<button
-					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-					setHistory([]);
-					setHistoryIndex(0);
-					setPoints([]);
-					setLineProgress(0);
-					setShadingHistory([null]);
-					setShadingIndex(0);
-					}}
-					disabled={!canReset}
-					style={{
-						...buttonStyle(canReset),
-						backgroundColor: '#e34242',
-						borderRadius: 6,
-						border: 'none',
-					}}
-				>
-					Reset
-				</button>
+						}}
+						disabled={!canReset}
+					>
+						Reset
+					</button>
+				</div>
 			</div>
 			<svg width={WIDTH} height={HEIGHT} style={{ display: 'block', pointerEvents: 'none' }}>
 				<defs>
@@ -447,8 +454,8 @@ const ShadeGraph = () => {
 					>
 						<path
 							d={`M 0 0 L 0 ${GRID_CELL} M 0 0 L ${GRID_CELL} 0 M ${GRID_CELL} 0 L ${GRID_CELL} ${GRID_CELL} M 0 ${GRID_CELL} L ${GRID_CELL} ${GRID_CELL}`}
-							stroke="#e0e0e0"
-							strokeWidth="0.5"
+							stroke="#e6e6e6"
+							strokeWidth="1"
 							fill="none"
 						/>
 					</pattern>
@@ -484,7 +491,7 @@ const ShadeGraph = () => {
 					y1={centerY}
 					x2={xAxisRight}
 					y2={centerY}
-					stroke="#333"
+					stroke="#999999"
 					strokeWidth={2}
 				/>
 				{/* Y axis */}
@@ -493,9 +500,35 @@ const ShadeGraph = () => {
 					y1={yAxisTop}
 					x2={centerX}
 					y2={yAxisBottom}
-					stroke="#333"
+					stroke="#999999"
 					strokeWidth={2}
 				/>
+				{/* Axis labels */}
+				<text
+					x={valueToX(10)}
+					y={centerY - 12}
+					textAnchor="middle"
+					fontSize="14px"
+					fontWeight="bold"
+					fontStyle="italic"
+					fill="#999999"
+					fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
+				>
+					x-axis
+				</text>
+				<text
+					x={centerX + 14}
+					y={yMax + 5}
+					textAnchor="start"
+					dominantBaseline="middle"
+					fontSize="14px"
+					fontWeight="bold"
+					fontStyle="italic"
+					fill="#999999"
+					fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
+				>
+					y-axis
+				</text>
 				{/* X axis ticks and labels */}
 				{tickValues.map((value) => {
 					const x = valueToX(value);
@@ -506,7 +539,7 @@ const ShadeGraph = () => {
 								y1={centerY}
 								x2={x}
 								y2={centerY + 10}
-								stroke="#333"
+								stroke="#999999"
 								strokeWidth={1.5}
 							/>
 							{value !== 0 && (
@@ -514,9 +547,10 @@ const ShadeGraph = () => {
 									x={x}
 									y={centerY + 26}
 									textAnchor="middle"
-									fontSize={14}
-									fill="#333"
-									fontFamily="system-ui, sans-serif"
+									fontSize="14px"
+									fontWeight="bold"
+									fill="#999999"
+									fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
 								>
 									{value}
 								</text>
@@ -534,7 +568,7 @@ const ShadeGraph = () => {
 								y1={y}
 								x2={centerX - 10}
 								y2={y}
-								stroke="#333"
+								stroke="#999999"
 								strokeWidth={1.5}
 							/>
 							{value !== 0 && (
@@ -542,9 +576,10 @@ const ShadeGraph = () => {
 									x={centerX - 14}
 									y={y + 5}
 									textAnchor="end"
-									fontSize={14}
-									fill="#333"
-									fontFamily="system-ui, sans-serif"
+									fontSize="14px"
+									fontWeight="bold"
+									fill="#999999"
+									fontFamily="'Latin Modern Roman CK12', 'Latin Modern Roman', serif"
 								>
 									{value}
 								</text>
@@ -555,19 +590,19 @@ const ShadeGraph = () => {
 				{/* Arrows at all 4 ends: right (+x), left (-x), top (+y), bottom (-y) */}
 				<polygon
 					points={`${xMax - arrowSize},${centerY - arrowSize} ${xMax},${centerY} ${xMax - arrowSize},${centerY + arrowSize}`}
-					fill="#333"
+					fill="#999999"
 				/>
 				<polygon
 					points={`${xMin + arrowSize},${centerY - arrowSize} ${xMin},${centerY} ${xMin + arrowSize},${centerY + arrowSize}`}
-					fill="#333"
+					fill="#999999"
 				/>
 				<polygon
 					points={`${centerX - arrowSize},${yMax + arrowSize} ${centerX},${yMax} ${centerX + arrowSize},${yMax + arrowSize}`}
-					fill="#333"
+					fill="#999999"
 				/>
 				<polygon
 					points={`${centerX - arrowSize},${yMin - arrowSize} ${centerX},${yMin} ${centerX + arrowSize},${yMin - arrowSize}`}
-					fill="#333"
+					fill="#999999"
 				/>
 				{/* Hover preview: where a point would be placed (hidden while line is animating) */}
 				{hoverPreview && points.length !== 2 && (
